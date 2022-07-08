@@ -1,0 +1,84 @@
+piVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: elasticsearch
+  namespace: default
+spec:
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app: elasticsearch # has to match .spec.template.metadata.labels
+  serviceName: "elasticsearch"
+  replicas: 1 # by default is 1
+  template:
+    metadata:
+      labels:
+        app: elasticsearch # has to match .spec.selector.matchLabels
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                - key: kubernetes.io/hostname
+                  operator: In
+                  values:
+                    - ip-192-168-6-101
+      tolerations:
+        - key: deploy-env
+          value: pre-release
+          effect: NoSchedule
+      terminationGracePeriodSeconds: 10
+      containers:
+      - name: elasticsearch
+        image: elasticsearch:7.1.1
+        imagePullPolicy: IfNotPresent
+        command: ["bash", "-c", "ulimit -l unlimited && sysctl -w vm.max_map_count=262144 && chown -R elasticsearch:elasticsearch /usr/share/elasticsearch/data && exec su elasticsearch docker-entrypoint.sh"]
+        securityContext:
+          privileged: true
+        resources:
+          limits:
+            memory: "3076Mi"
+            cpu: "1000m"
+          requests:
+            memory: "2048Mi"
+            cpu: "50m"
+        ports:
+        - containerPort: 9200
+          name: http
+        - containerPort: 9300
+          name: tcp
+        env:
+          - name: "cluster.name"
+            value: "elasticsearch"        
+          - name: discovery.type
+            value: 'single-node'
+          - name: http.cors.enabled
+            value: 'true'
+          - name: http.cors.allow-origin
+            value: '*' 
+          - name: ES_JAVA_OPTS
+            value: '-Xms2g -Xmx2g'
+        volumeMounts:
+        - name: elasticsearch-data
+          mountPath: /usr/share/elasticsearch/data
+        - name: localtime
+          mountPath: /etc/localtime
+        - name: timezone
+          mountPath: /etc/timezone
+      volumes:
+        - name: localtime
+          hostPath:
+            path: /etc/localtime
+        - name: timezone
+          hostPath:
+            path: /etc/timezone
+  volumeClaimTemplates:
+  - metadata:
+      name: elasticsearch-data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      storageClassName: rbd
+      resources:
+        requests:
+          storage: 64Gi
